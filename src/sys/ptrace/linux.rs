@@ -18,6 +18,12 @@ pub type AddressType = *mut ::libc::c_void;
 ))]
 use libc::user_regs_struct;
 
+#[cfg(all(
+    target_os = "linux",
+    all(target_arch = "arm", any(target_env = "gnu", target_env = "musl")),
+))]
+use libc::user_regs;
+
 cfg_if! {
     if #[cfg(any(all(target_os = "linux", target_arch = "s390x"),
                  all(target_os = "linux", target_env = "gnu"),
@@ -200,6 +206,15 @@ pub fn getregs(pid: Pid) -> Result<user_regs_struct> {
     ptrace_get_data::<user_regs_struct>(Request::PTRACE_GETREGS, pid)
 }
 
+/// Get user registers, as with `ptrace(PTRACE_GETREGS, ...)`
+#[cfg(all(
+    target_os = "linux",
+    all(target_arch = "arm", any(target_env = "gnu", target_env = "musl")),
+))]
+pub fn getregs(pid: Pid) -> Result<user_regs> {
+    ptrace_get_data::<user_regs>(Request::PTRACE_GETREGS, pid)
+}
+
 /// Set user registers, as with `ptrace(PTRACE_SETREGS, ...)`
 #[cfg(all(
     target_os = "linux",
@@ -208,12 +223,25 @@ pub fn getregs(pid: Pid) -> Result<user_regs_struct> {
         all(target_arch = "x86", target_env = "gnu"))
 ))]
 pub fn setregs(pid: Pid, regs: user_regs_struct) -> Result<()> {
-    let res = unsafe {
+    unsafe { setregs_helper(pid, regs) }
+}
+
+/// Set user registers, as with `ptrace(PTRACE_SETREGS, ...)`
+#[cfg(all(
+    target_os = "linux",
+    all(target_arch = "arm", any(target_env = "gnu", target_env = "musl")),
+))]
+pub fn setregs(pid: Pid, regs: user_regs) -> Result<()> {
+    unsafe { setregs_helper(pid, regs) }
+}
+
+unsafe fn setregs_helper<T>(pid: Pid, regs: T) -> Result<()> {
+    let res =
         libc::ptrace(Request::PTRACE_SETREGS as RequestType,
                      libc::pid_t::from(pid),
                      ptr::null_mut::<c_void>(),
-                     &regs as *const _ as *const c_void)
-    };
+                     &regs as *const _ as *const c_void);
+
     Errno::result(res).map(drop)
 }
 
